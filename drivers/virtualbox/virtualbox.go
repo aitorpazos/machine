@@ -33,6 +33,8 @@ const (
 	defaultDiskSize            = 20000
 	defaultDNSProxy            = true
 	defaultDNSResolver         = false
+	defaultDaemonForward       = false
+	defaultDaemonForwardPort   = 2376
 )
 
 var (
@@ -70,6 +72,8 @@ type Driver struct {
 	DNSProxy            bool
 	NoVTXCheck          bool
 	ShareFolder         string
+	DaemonForward       bool
+	DaemonForwardPort   int
 }
 
 // NewDriver creates a new VirtualBox driver with default settings.
@@ -95,6 +99,8 @@ func NewDriver(hostName, storePath string) *Driver {
 		HostOnlyNoDHCP:      defaultHostOnlyNoDHCP,
 		DNSProxy:            defaultDNSProxy,
 		HostDNSResolver:     defaultDNSResolver,
+		DaemonForward:       defaultDaemonForward,
+		DaemonForwardPort:   defaultDaemonForwardPort,
 		BaseDriver: &drivers.BaseDriver{
 			MachineName: hostName,
 			StorePath:   storePath,
@@ -187,6 +193,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			EnvVar: "VIRTUALBOX_NO_DNS_PROXY",
 		},
 		mcnflag.BoolFlag{
+			Name:   "virtualbox-daemon-forward",
+			Usage:  "Enables connection to docker daemon through NAT forwarding instead of using Host-Only interface",
+			EnvVar: "VIRTUALBOX_DAEMON_FORWARD",
+		},
+		mcnflag.BoolFlag{
 			Name:   "virtualbox-no-vtx-check",
 			Usage:  "Disable checking for the availability of hardware virtualization before the vm is started",
 			EnvVar: "VIRTUALBOX_NO_VTX_CHECK",
@@ -224,7 +235,7 @@ func (d *Driver) GetURL() (string, error) {
 	if ip == "" {
 		return "", nil
 	}
-	return fmt.Sprintf("tcp://%s:2376", ip), nil
+	return fmt.Sprintf("tcp://%s:%d", ip, d.DaemonForwardPort), nil
 }
 
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
@@ -247,6 +258,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.HostOnlyNoDHCP = flags.Bool("virtualbox-hostonly-no-dhcp")
 	d.NoShare = flags.Bool("virtualbox-no-share")
 	d.DNSProxy = !flags.Bool("virtualbox-no-dns-proxy")
+	d.DaemonForward = flags.Bool("virtualbox-daemon-forward")
 	d.NoVTXCheck = flags.Bool("virtualbox-no-vtx-check")
 	d.ShareFolder = flags.String("virtualbox-share-folder")
 
@@ -530,6 +542,13 @@ func (d *Driver) Start() error {
 			return err
 		}
 
+		if d.DaemonForward {
+			d.DaemonForwardPort, err = setPortForwarding(d, 1, "docker", "tcp", 2376, d.DaemonForwardPort)
+			if err != nil {
+				return err
+			}
+		}
+
 		if err := d.vbm("startvm", d.MachineName, "--type", d.UIType); err != nil {
 			if lines, readErr := d.readVBoxLog(); readErr == nil && len(lines) > 0 {
 				return fmt.Errorf("Unable to start the VM: %s\nDetails: %s", err, lines[len(lines)-1])
@@ -780,6 +799,14 @@ func (d *Driver) GetIP() (string, error) {
 	}
 	if s != state.Running {
 		return "", drivers.ErrHostIsNotRunning
+	}
+
+	if d.DaemonForward {
+		d.IPAddress, err = d.GetSSHHostname()
+		if err != nil {
+			return "", err
+		}
+		return d.IPAddress, nil
 	}
 
 	macAddress, err := d.getHostOnlyMACAddress()
