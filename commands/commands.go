@@ -221,7 +221,7 @@ var Commands = []cli.Command{
 		Flags:           SharedCreateFlags,
 		Name:            "create",
 		Usage:           "Create a machine",
-		Description:     fmt.Sprintf("Run '%s create --driver name' to include the create flags for that driver in the help text.", os.Args[0]),
+		Description:     fmt.Sprintf("Run '%s create --driver name --help' to include the create flags for that driver in the help text.", os.Args[0]),
 		Action:          runCommand(cmdCreateOuter),
 		SkipFlagParsing: true,
 	},
@@ -314,6 +314,10 @@ var Commands = []cli.Command{
 				Name:  "force, f",
 				Usage: "Force rebuild and do not prompt",
 			},
+			cli.BoolFlag{
+				Name:  "client-certs",
+				Usage: "Also regenerate client certificates and CA.",
+			},
 		},
 	},
 	{
@@ -358,6 +362,22 @@ var Commands = []cli.Command{
 			cli.BoolFlag{
 				Name:  "delta, d",
 				Usage: "Reduce amount of data sent over network by sending only the differences (uses rsync)",
+			},
+			cli.BoolFlag{
+				Name:  "quiet, q",
+				Usage: "Disables the progress meter as well as warning and diagnostic messages from ssh",
+			},
+		},
+	},
+	{
+		Name:        "mount",
+		Usage:       "Mount or unmount a directory from a machine with SSHFS.",
+		Description: "Arguments are [machine:][path] [mountpoint]",
+		Action:      runCommand(cmdMount),
+		Flags: []cli.Flag{
+			cli.BoolFlag{
+				Name:  "unmount, u",
+				Usage: "Unmount instead of mount",
 			},
 		},
 	},
@@ -416,14 +436,15 @@ func printIP(h *host.Host) func() error {
 func machineCommand(actionName string, host *host.Host, errorChan chan<- error) {
 	// TODO: These actions should have their own type.
 	commands := map[string](func() error){
-		"configureAuth": host.ConfigureAuth,
-		"start":         host.Start,
-		"stop":          host.Stop,
-		"restart":       host.Restart,
-		"kill":          host.Kill,
-		"upgrade":       host.Upgrade,
-		"ip":            printIP(host),
-		"provision":     host.Provision,
+		"configureAuth":    host.ConfigureAuth,
+		"configureAllAuth": host.ConfigureAllAuth,
+		"start":            host.Start,
+		"stop":             host.Stop,
+		"restart":          host.Restart,
+		"kill":             host.Kill,
+		"upgrade":          host.Upgrade,
+		"ip":               printIP(host),
+		"provision":        host.Provision,
 	}
 
 	log.Debugf("command=%s machine=%s", actionName, host.Name)

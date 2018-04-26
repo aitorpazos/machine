@@ -1,8 +1,10 @@
-FROM golang:1.8.3
+FROM golang:1.10.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
                 openssh-client \
                 rsync \
+                fuse \
+                sshfs \
         && rm -rf /var/lib/apt/lists/*
 
 RUN go get  github.com/golang/lint/golint \
